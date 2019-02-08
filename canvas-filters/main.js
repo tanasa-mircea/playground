@@ -6,10 +6,10 @@ var config = {
 var canvas,
     canvasContext,
     image,
-    imageData;
+    imageData,
+    cachedImageData;
 
-var availableFilters = [
-  {
+var availableFilters = [{
     filterFunction: makeGrayscale,
     name: "Grayscale"
   }, {
@@ -38,10 +38,16 @@ var availableFilters = [
     name: "Darken"
   }, {
     filterFunction: makeBlur,
-    options: {
-      change: 2
-    },
     name: "Blur"
+  }, {
+    filterFunction: makeSharpen,
+    name: "Sharpen"
+  }, {
+    filterFunction: makeEmboss,
+    name: "Emboss"
+  }, {
+    filterFunction: makeTest,
+    name: "Test"
   }
 ]
 
@@ -53,9 +59,17 @@ function initCanvas() {
   image = document.getElementById("bamboo");
   canvasContext.drawImage(image, 0, 0, config.canvasWidth, config.canvasHeight);
   imageData = canvasContext.getImageData(0, 0, config.canvasWidth, config.canvasHeight);
+  cachedImageData = new ImageData(imageData.data.slice(0), imageData.width, imageData.height);
 }
 
 function applyFilter(filterFunction, data, options) {
+  var outputCanvas = document.createElement("canvas");
+  outerHeight.height = config.canvasHeight;
+  outerHeight.width = config.canvasWidth;
+  var outputCanvasContext = outputCanvas.getContext("2d");
+  outputCanvasContext.putImageData(data, 0, 0);
+  var newData = outputCanvasContext.getImageData(0, 0, config.canvasWidth, config.canvasHeight)
+
   var mutatedPixels = filterFunction(data, options);
   canvasContext.putImageData(mutatedPixels, 0, 0);
 }
@@ -118,7 +132,7 @@ function makeThreshold(pixels, options) {
 
 function makeInvert(pixels) {
   var data = pixels.data;
-  for (var i=0; i<data.length; i+=4) {
+  for (var i = 0; i<data.length; i+=4) {
     data[i] = 255 - data[i];
     data[i + 1] = 255 - data[i + 1];
     data[i + 2] = 255 - data[i + 2];
@@ -127,19 +141,84 @@ function makeInvert(pixels) {
 }
 
 function makeBlur(pixels, options) {
-  var data = pixels.data;
-  for (var i=0; i<data.length; i+=4) {
-    data[i] = 255 - data[i];
-    data[i + 1] = 255 - data[i + 1];
-    data[i + 2] = 255 - data[i + 2];
-  }
-  return pixels;
+  return this.convolution(pixels,
+    [ 1/9, 1/9, 1/9,
+      1/9, 1/9, 1/9,
+      1/9, 1/9, 1/9 ], 1);
 }
 
-function createButton(config) {
+function makeSharpen(pixels, options) {
+  return this.convolution(pixels,
+    [ 0, -1,  0,
+     -1,  5, -1,
+      0, -1,  0 ], 1);
+}
+
+function makeEmboss(pixels, options) {
+  return this.convolution(pixels,
+    [ -2, -1, 0,
+      -1, 1, 1,
+      0, 1, 2 ], 1);
+}
+
+function makeTest(pixels, options) {
+  return this.convolution(pixels,
+    [ 0, 0, 1, 0, 0,
+      0, 0, -1, 0, 0,
+      1, -1, 2, -1, 1,
+      0, 0, -1, 0, 0,
+      0, 0, 1, 0, 0], 1);
+}
+
+function convolution(pixels, weights) {
+  var outputCanvas = document.createElement("canvas");
+  var outputCanvasContext = outputCanvas.getContext("2d");
+
+  var side = Math.round(Math.sqrt(weights.length));
+  var halfSide = Math.floor(side/2);
+  var src = pixels.data;
+  var sw = pixels.width;
+  var sh = pixels.height;
+
+  var w = sw;
+  var h = sh;
+
+  var output = outputCanvasContext.createImageData(w, h);
+  var dst = output.data;
+
+  for (var y=0; y<h; y++) {
+    for (var x=0; x<w; x++) {
+      var sy = y;
+      var sx = x;
+      var dstOff = (y*w+x)*4;
+      var r=0, g=0, b=0, a=0;
+      for (var cy=0; cy<side; cy++) {
+        for (var cx=0; cx<side; cx++) {
+          var scy = sy + cy - halfSide;
+          var scx = sx + cx - halfSide;
+          if (scy >= 0 && scy < sh && scx >= 0 && scx < sw) {
+            var srcOff = (scy*sw+scx)*4;
+            var wt = weights[cy*side+cx];
+            r += src[srcOff] * wt;
+            g += src[srcOff+1] * wt;
+            b += src[srcOff+2] * wt;
+            a += src[srcOff+3] * wt;
+          }
+        }
+      }
+      dst[dstOff] = r;
+      dst[dstOff+1] = g;
+      dst[dstOff+2] = b;
+      dst[dstOff+3] = a;
+    }
+  }
+  return output;
+};
+
+function createButton(btnConfig) {
   var btn = document.createElement("button");
-  btn.innerText = config.name;
-  btn.addEventListener("click", applyFilter.bind(this, config.filterFunction, imageData, config.options));
+  btn.innerText = btnConfig.name;
+  btn.addEventListener("click", applyFilter.bind(this, btnConfig.filterFunction, imageData, btnConfig.options));
   return btn;
 }
 
